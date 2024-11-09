@@ -230,6 +230,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 16,
     margin: 10,
+    marginBottom:20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.15,
@@ -237,7 +238,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   dayItem: {
-    paddingVertical: 12,
+    paddingVertical: 1,
     paddingHorizontal: 20,
     marginHorizontal: 6,
     borderRadius: 12,

@@ -1,9 +1,11 @@
 // src/screens/FeedbackScreen.tsx
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
 import { RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../App';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_BASE_URL from '../api/apiConfig';
 
 type FeedbackScreenRouteProp = RouteProp<RootStackParamList, 'Feedback'>;
 type FeedbackScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Feedback'>;
@@ -13,19 +15,70 @@ type Props = {
   navigation: FeedbackScreenNavigationProp;
 };
 
-const FeedbackScreen: React.FC<Props> = ({ route }) => {
+const FeedbackScreen: React.FC<Props> = ({ route, navigation }) => {
   const { subjectId, subjectName } = route.params;
   const [rating, setRating] = useState<number>(0);
   const [feedbackText, setFeedbackText] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const submitFeedback = () => {
-    // Handle feedback submission logic here
-    Alert.alert('Mulțumim!', 'Feedback-ul tău a fost trimis.');
-    // Reset the form
-    setRating(0);
-    setFeedbackText('');
-    setIsAnonymous(false);
+  const submitFeedback = async () => {
+    // Validări înainte de trimitere
+    if (rating < 1 || rating > 5) {
+      Alert.alert('Eroare', 'Rating-ul trebuie să fie între 1 și 5.');
+      return;
+    }
+
+    if (feedbackText.trim() === '') {
+      Alert.alert('Eroare', 'Te rugăm să introduci feedback-ul.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        Alert.alert('Eroare', 'Token de autentificare lipsă. Te rugăm să te autentifici din nou.');
+        navigation.replace('Login');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          feedbackText,
+          rating,
+          isAnonymous,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        Alert.alert('Eroare', errorData.message || 'A apărut o problemă la trimiterea feedback-ului.');
+        return;
+      }
+
+      const data = await response.json();
+      Alert.alert('Mulțumim!', data.message);
+
+      // Resetare formular
+      setRating(0);
+      setFeedbackText('');
+      setIsAnonymous(false);
+
+      // Navigare înapoi sau altă acțiune
+      navigation.goBack();
+    } catch (error: any) {
+      console.error('Eroare la trimiterea feedback-ului:', error);
+      Alert.alert('Eroare', 'A apărut o eroare la trimiterea feedback-ului. Te rugăm să încerci din nou.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -72,8 +125,13 @@ const FeedbackScreen: React.FC<Props> = ({ route }) => {
       <TouchableOpacity
         style={styles.submitButton}
         onPress={submitFeedback}
+        disabled={loading}
       >
-        <Text style={styles.submitButtonText}>Trimite Feedback</Text>
+        {loading ? (
+          <ActivityIndicator color="#ffffff" />
+        ) : (
+          <Text style={styles.submitButtonText}>Trimite Feedback</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
