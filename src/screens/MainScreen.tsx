@@ -161,7 +161,6 @@ const styles = StyleSheet.create({
       paddingHorizontal: 10,
       backgroundColor: '#ffffff',
       borderRadius: 16,
-      marginBottom: 10,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 3 },
       shadowOpacity: 0.15,
@@ -213,6 +212,7 @@ const styles = StyleSheet.create({
     subjectContainer: {
       backgroundColor: '#ffffff',
       padding: 20,
+      marginTop: 10, 
       borderRadius: 16,
       marginBottom: 15,
       shadowColor: '#000',
