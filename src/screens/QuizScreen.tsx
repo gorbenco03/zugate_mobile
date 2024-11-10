@@ -1,5 +1,3 @@
-// src/screens/QuizScreen.tsx
-
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { RouteProp } from '@react-navigation/native';
@@ -50,28 +48,51 @@ const QuizScreen: React.FC<Props> = ({ route, navigation }) => {
           return;
         }
 
-        const response = await fetch(`${API_BASE_URL}/student/quizzes/${subjectId}`, {
+        // First, fetch the lesson to get the quiz ID
+        const lessonResponse = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}`, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.log('Error fetching quiz:', errorData);
-          Alert.alert('Error', errorData.message || 'Unable to fetch the quiz.');
+        if (!lessonResponse.ok) {
+          const errorText = await lessonResponse.text();
+          console.log('Error fetching lesson:', errorText);
+          Alert.alert('Error', 'Unable to fetch the lesson details.');
           return;
         }
 
-        const data = await response.json();
-        console.log('Quiz received:', data);
+        const lessonData = await lessonResponse.json();
+        if (!lessonData.lesson.quizzes || lessonData.lesson.quizzes.length === 0) {
+          Alert.alert('No Quiz', 'There is no quiz available for this lesson.');
+          navigation.goBack();
+          return;
+        }
 
-        // Correctly set the quiz state
-        setQuiz(data.quiz);
+        const quizId = lessonData.lesson.quizzes[0]._id;
+
+        // Then fetch the quiz using the quiz ID
+        const quizResponse = await fetch(`${API_BASE_URL}/student/quizzes/${quizId}`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!quizResponse.ok) {
+          const errorText = await quizResponse.text();
+          console.log('Error fetching quiz:', errorText);
+          Alert.alert('Error', 'Unable to fetch the quiz.');
+          return;
+        }
+
+        const quizData = await quizResponse.json();
+        console.log('Quiz received:', quizData);
+        setQuiz(quizData.quiz);
       } catch (error) {
         console.error('Error fetching quiz:', error);
-        Alert.alert('Error', 'An error occurred while connecting to the server. Please check your internet connection.');
+        Alert.alert('Error', 'An error occurred while connecting to the server.');
       } finally {
         setLoading(false);
       }
@@ -113,15 +134,14 @@ const QuizScreen: React.FC<Props> = ({ route, navigation }) => {
     if (!quiz || !quiz.questions) {
       return;
     }
-  
+
     try {
       const token = await AsyncStorage.getItem('token');
       if (!token) {
         navigation.replace('Login');
         return;
       }
-  
-      // Construiește array-ul de răspunsuri
+
       const answers = quiz.questions.map((question, index) => {
         const selectedOptionIndex = selectedOptions[index];
         const selectedOption = selectedOptionIndex !== undefined 
@@ -130,12 +150,10 @@ const QuizScreen: React.FC<Props> = ({ route, navigation }) => {
         return {
           questionId: question._id,
           selectedOption: selectedOption,
-          // isCorrect va fi calculat pe backend
         };
       });
-  
-      // Trimite doar 'answers'; backend-ul va calcula 'score'
-      const response = await fetch(`${API_BASE_URL}/student/quizzes/${quiz.lesson}/submit`, {
+
+      const response = await fetch(`${API_BASE_URL}/student/quizzes/${quiz._id}/submit`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -145,23 +163,22 @@ const QuizScreen: React.FC<Props> = ({ route, navigation }) => {
           answers: answers,
         }),
       });
-  
+
       if (!response.ok) {
         const errorData = await response.json();
         console.log('Error submitting quiz:', errorData);
         Alert.alert('Error', errorData.message || 'Unable to submit the quiz.');
         return;
       }
-  
+
       const data = await response.json();
       console.log('Quiz results:', data);
-  
-      // Afișează scorul primit de la backend
+
       Alert.alert('Quiz Completed', `Your score: ${data.score}/${quiz.questions.length}`);
       navigation.goBack();
     } catch (error) {
       console.error('Error submitting quiz:', error);
-      Alert.alert('Error', 'An error occurred while connecting to the server. Please check your internet connection.');
+      Alert.alert('Error', 'An error occurred while submitting the quiz.');
     }
   };
 
@@ -191,11 +208,19 @@ const QuizScreen: React.FC<Props> = ({ route, navigation }) => {
           ]}
           onPress={() => handleOptionSelect(index)}
         >
-          <Text style={styles.optionText}>{option.text}</Text>
+          <Text style={[
+            styles.optionText,
+            selectedOptions[currentQuestionIndex] === index ? styles.selectedOptionText : null,
+          ]}>
+            {option.text}
+          </Text>
         </TouchableOpacity>
       ))}
 
-      <TouchableOpacity style={styles.nextButton} onPress={handleNextQuestion}>
+      <TouchableOpacity 
+        style={styles.nextButton} 
+        onPress={handleNextQuestion}
+      >
         <Text style={styles.nextButtonText}>
           {currentQuestionIndex < quiz.questions.length - 1 ? 'Next Question' : 'Submit Quiz'}
         </Text>
@@ -248,6 +273,9 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 18,
     color: '#2c3e50',
+  },
+  selectedOptionText: {
+    color: '#ffffff',
   },
   nextButton: {
     backgroundColor: '#2ecc71',

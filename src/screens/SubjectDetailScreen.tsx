@@ -1,5 +1,4 @@
-// src/screens/SubjectDetailScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -40,18 +39,157 @@ type LessonDetail = {
     _id: string;
     name: string;
   };
-  // Adaugă alte câmpuri dacă este necesar
+  quizzes?: any[];
 };
 
+// Componenta separată pentru statusul prezenței
+const AttendanceStatus: React.FC<{ isPresent: boolean }> = React.memo(({ isPresent }) => {
+  if (!isPresent) return null;
+  
+  return (
+    <View style={styles.attendanceStatusContainer}>
+      <Icon name="check-circle" size={24} color="#4CAF50" />
+      <Text style={styles.attendanceStatusText}>Prezență confirmată</Text>
+    </View>
+  );
+});
+
+// Componenta separată pentru detaliile lecției
+const LessonDetails: React.FC<{ lessonDetail: LessonDetail }> = React.memo(({ lessonDetail }) => {
+  return (
+    <View style={styles.lessonDetailsContainer}>
+      <Text style={styles.detailText}>Profesor: {lessonDetail.teacher.name}</Text>
+      <Text style={styles.detailText}>Ora: {lessonDetail.time}</Text>
+      <Text style={styles.detailText}>Data: {moment(lessonDetail.date).format('DD MMMM YYYY')}</Text>
+      {lessonDetail.description && (
+        <>
+          <Text style={styles.sectionTitle}>Descriere</Text>
+          <Text style={styles.descriptionText}>{lessonDetail.description}</Text>
+        </>
+      )}
+    </View>
+  );
+});
+
+// Componenta separată pentru butoanele de acțiune
+const ActionButtons: React.FC<{
+  lessonDetail: LessonDetail;
+  navigation: SubjectDetailScreenNavigationProp;
+  isPresent: boolean;
+  attendanceLoading: boolean;
+  onMarkAttendance: () => void;
+}> = React.memo(({ lessonDetail, navigation, isPresent, attendanceLoading, onMarkAttendance }) => {
+  return (
+    <View style={styles.actionsContainer}>
+      <TouchableOpacity
+        style={[styles.squareButton, styles.quizButton]}
+        onPress={() =>
+          navigation.navigate('Quiz', {
+            subjectId: lessonDetail._id,
+            subjectName: lessonDetail.title,
+          })
+        }
+      >
+        <Icon name="book-open-page-variant" size={30} color="#fff" />
+        <Text style={styles.buttonText}>Daily Quiz</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.squareButton, styles.feedbackButton]}
+        onPress={() => navigation.navigate('Feedback', { subjectId: lessonDetail._id, subjectName: lessonDetail.title })}
+      >
+        <Icon name="comment-text" size={30} color="#fff" />
+        <Text style={styles.buttonText}>Feedback</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          styles.squareButton, 
+          styles.attendanceButton,
+          isPresent && styles.attendanceButtonActive
+        ]}
+        onPress={onMarkAttendance}
+        disabled={attendanceLoading}
+      >
+        {attendanceLoading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <Icon name={isPresent ? "check-circle" : "checkbox-blank-circle-outline"} size={30} color="#fff" />
+            <Text style={styles.buttonText}>{isPresent ? 'Retrage prezența' : 'Marchează Prezența'}</Text>
+          </>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+});
+
 const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { subjectId, subjectName } = route.params;
+  const { subjectId } = route.params;
   const [isPresent, setIsPresent] = useState<boolean>(false);
   const [lessonDetail, setLessonDetail] = useState<LessonDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [attendanceLoading, setAttendanceLoading] = useState<boolean>(false); // Nou pentru loading la prezență
+  const [attendanceLoading, setAttendanceLoading] = useState<boolean>(false);
+
+  const checkAttendanceStatus = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}/attendance`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIsPresent(data.attended);
+      }
+    } catch (error) {
+      console.error('Eroare la verificarea prezenței:', error);
+    }
+  }, [subjectId]);
+
+  const handleMarkAttendance = useCallback(async () => {
+    setAttendanceLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        Alert.alert('Eroare', 'Token de autentificare lipsă. Te rugăm să te autentifici din nou.');
+        navigation.replace('Login');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}/attendance`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        Alert.alert('Eroare', errorData.message || 'A apărut o problemă la marcarea prezenței.');
+        return;
+      }
+
+      const data = await response.json();
+      setIsPresent(data.attended);
+      Alert.alert('Succes', data.message);
+
+    } catch (error) {
+      console.error('Eroare la marcarea prezenței:', error);
+      Alert.alert('Eroare', 'A apărut o eroare la marcarea prezenței. Te rugăm să încerci din nou.');
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }, [subjectId, navigation]);
 
   useEffect(() => {
-    const fetchLessonDetail = async () => {
+    const fetchData = async () => {
       try {
         const token = await AsyncStorage.getItem('token');
         if (!token) {
@@ -77,74 +215,22 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         console.log('Detalii lecție primite:', data);
         setLessonDetail(data.lesson);
 
-        // Verificăm dacă prezența este deja marcată
-        const attendanceResponse = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}/attendance`, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (attendanceResponse.ok) {
-          const attendanceData = await attendanceResponse.json();
-          setIsPresent(attendanceData.attended);
-        }
+        await checkAttendanceStatus();
       } catch (error) {
         console.error('Eroare la cererea de detalii lecție:', error);
-        Alert.alert('Eroare', 'A apărut o eroare la conectarea cu serverul. Verifică conexiunea la internet.');
+        Alert.alert('Eroare', 'A apărut o eroare la conectarea cu serverul.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchLessonDetail();
-  }, [subjectId, navigation]);
-
-  const handleOpenLink = (url: string) => {
-    Linking.openURL(url);
-  };
-
-  const handleMarkAttendance = async () => {
-    setAttendanceLoading(true);
-    try {
-      const token = await AsyncStorage.getItem('token');
-      if (!token) {
-        Alert.alert('Eroare', 'Token de autentificare lipsă. Te rugăm să te autentifici din nou.');
-        navigation.replace('Login');
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}/attendance`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        Alert.alert('Eroare', errorData.message || 'A apărut o problemă la marcarea prezenței.');
-        return;
-      }
-
-      const data = await response.json();
-      Alert.alert('Succes', data.message);
-
-      // Actualizăm starea prezenței
-      setIsPresent(!isPresent);
-    } catch (error: any) {
-      console.error('Eroare la marcarea prezenței:', error);
-      Alert.alert('Eroare', 'A apărut o eroare la marcarea prezenței. Te rugăm să încerci din nou.');
-    } finally {
-      setAttendanceLoading(false);
-    }
-  };
+    fetchData();
+  }, [subjectId, navigation, checkAttendanceStatus]);
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={styles.primary.color} />
+        <ActivityIndicator size="large" color="#4CAF50" />
       </View>
     );
   }
@@ -160,83 +246,25 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>{lessonDetail.title}</Text>
+      
+      {/* Indicator de prezență */}
+      <AttendanceStatus isPresent={isPresent} />
 
       {/* Detalii despre lecție */}
-      <View style={styles.lessonDetailsContainer}>
-        <Text style={styles.detailText}>Profesor: {lessonDetail.teacher.name}</Text>
-        <Text style={styles.detailText}>Ora: {lessonDetail.time}</Text>
-        <Text style={styles.detailText}>Data: {moment(lessonDetail.date).format('DD MMMM YYYY')}</Text>
-        {lessonDetail.description && (
-          <>
-            <Text style={styles.sectionTitle}>Descriere</Text>
-            <Text style={styles.descriptionText}>{lessonDetail.description}</Text>
-          </>
-        )}
-      </View>
+      <LessonDetails lessonDetail={lessonDetail} />
 
-      {/* Secțiunea de Acțiuni */}
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={[styles.squareButton, styles.quizButton]}
-          onPress={() =>
-            navigation.navigate('Quiz', {
-              subjectId: lessonDetail._id,
-              subjectName: lessonDetail.title,
-            })
-          }
-        >
-          <Icon name="book-open-page-variant" size={30} color="#fff" />
-          <Text style={styles.buttonText}>Daily Quiz</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.squareButton, styles.feedbackButton]}
-          onPress={() => navigation.navigate('Feedback', { subjectId: lessonDetail._id, subjectName: lessonDetail.title })}
-        >
-          <Icon name="comment-text" size={30} color="#fff" />
-          <Text style={styles.buttonText}>Feedback</Text>
-        </TouchableOpacity>
-
-        {/* Butonul de Prezență */}
-        <TouchableOpacity
-          style={[styles.squareButton, styles.attendanceButton]}
-          onPress={handleMarkAttendance}
-          disabled={attendanceLoading}
-        >
-          {attendanceLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Icon name={isPresent ? "check-circle" : "checkbox-blank-circle-outline"} size={30} color="#fff" />
-              <Text style={styles.buttonText}>{isPresent ? 'Retrage prezența' : 'Marchează Prezența'}</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Link-uri Utile (dacă există) */}
-      {/* {lessonDetail.usefulLinks && lessonDetail.usefulLinks.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>Link-uri Utile</Text>
-          <View style={styles.linksContainer}>
-            {lessonDetail.usefulLinks.map((link: { id: string; title: string; url: string }) => (
-              <TouchableOpacity
-                key={link.id}
-                style={[styles.linkButton, styles.usefulLinkButton]}
-                onPress={() => handleOpenLink(link.url)}
-              >
-                <Icon name="link" size={24} color="#fff" />
-                <Text style={styles.linkText}>{link.title}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </>
-      )} */}
+      {/* Butoane de acțiune */}
+      <ActionButtons
+        lessonDetail={lessonDetail}
+        navigation={navigation}
+        isPresent={isPresent}
+        attendanceLoading={attendanceLoading}
+        onMarkAttendance={handleMarkAttendance}
+      />
     </ScrollView>
   );
 };
 
-export default SubjectDetailScreen;
 
 const styles = StyleSheet.create({
   primary: {
@@ -257,6 +285,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  attendanceStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  attendanceStatusText: {
+    marginLeft: 8,
+    color: '#4CAF50',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  attendanceButtonActive: {
+    backgroundColor: '#388E3C', // Verde mai închis pentru starea activă
   },
   errorText: {
     fontSize: 18,
@@ -307,7 +352,7 @@ const styles = StyleSheet.create({
   },
   squareButton: {
     width: '48%',
-    aspectRatio: 1, // Pătrat
+    aspectRatio: 1,
     borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
@@ -347,7 +392,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 15,
-    backgroundColor: '#FF9800', // Portocaliu
+    backgroundColor: '#FF9800',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
@@ -355,7 +400,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   usefulLinkButton: {
-    backgroundColor: '#FF9800', // Portocaliu
+    backgroundColor: '#FF9800',
   },
   linkText: {
     color: '#FFFFFF',
@@ -364,3 +409,5 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 });
+
+export default SubjectDetailScreen;
