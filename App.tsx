@@ -26,6 +26,7 @@ export type RootStackParamList = {
   DaySchedule: { day: string };
   SubjectDetail: { subjectId: string; subjectName: string; grade?: string };
   Quiz: { subjectId: string; subjectName: string };
+  QuizResults: { results: any };
   Feedback: { subjectId: string; subjectName: string };
   Tools: undefined;
   Profile: undefined;
