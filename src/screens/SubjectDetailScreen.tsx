@@ -102,28 +102,25 @@ const ActionButtons: React.FC<{
         <Text style={styles.buttonText}>Feedback</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[
-          styles.squareButton, 
-          styles.attendanceButton,
-          isPresent && styles.attendanceButtonActive
-        ]}
-        onPress={onMarkAttendance}
-        disabled={attendanceLoading}
-      >
-        {attendanceLoading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Icon name={isPresent ? "check-circle" : "checkbox-blank-circle-outline"} size={30} color="#fff" />
-            <Text style={styles.buttonText}>{isPresent ? 'Retrage prezența' : 'Marchează Prezența'}</Text>
-          </>
-        )}
-      </TouchableOpacity>
+      {!isPresent && (
+        <TouchableOpacity
+          style={[styles.squareButton, styles.attendanceButton]}
+          onPress={onMarkAttendance}
+          disabled={attendanceLoading || isPresent}
+        >
+          {attendanceLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Icon name="checkbox-blank-circle-outline" size={30} color="#fff" />
+              <Text style={styles.buttonText}>Marchează Prezența</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   );
 });
-
 const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const { subjectId } = route.params;
   const [isPresent, setIsPresent] = useState<boolean>(false);
@@ -135,17 +132,17 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       const token = await AsyncStorage.getItem('token');
       if (!token) return;
-
+  
       const response = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}/attendance`, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-
+  
       if (response.ok) {
         const data = await response.json();
-        setIsPresent(data.attended);
+        setIsPresent(data.attended); // Setați statusul prezenței din răspuns
       }
     } catch (error) {
       console.error('Eroare la verificarea prezenței:', error);
@@ -153,6 +150,7 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   }, [subjectId]);
 
   const handleMarkAttendance = useCallback(async () => {
+    if (isPresent) return; // Evită marcarea din nou dacă deja este prezent
     setAttendanceLoading(true);
     try {
       const token = await AsyncStorage.getItem('token');
@@ -161,7 +159,7 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         navigation.replace('Login');
         return;
       }
-
+  
       const response = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}/attendance`, {
         method: 'POST',
         headers: {
@@ -169,24 +167,24 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           Authorization: `Bearer ${token}`,
         },
       });
-
+  
       if (!response.ok) {
         const errorData = await response.json();
         Alert.alert('Eroare', errorData.message || 'A apărut o problemă la marcarea prezenței.');
         return;
       }
-
+  
       const data = await response.json();
       setIsPresent(data.attended);
       Alert.alert('Succes', data.message);
-
+  
     } catch (error) {
       console.error('Eroare la marcarea prezenței:', error);
       Alert.alert('Eroare', 'A apărut o eroare la marcarea prezenței. Te rugăm să încerci din nou.');
     } finally {
       setAttendanceLoading(false);
     }
-  }, [subjectId, navigation]);
+  }, [subjectId, navigation, isPresent]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -196,25 +194,26 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
           navigation.replace('Login');
           return;
         }
-
+  
         const response = await fetch(`${API_BASE_URL}/student/lessons/${subjectId}`, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
-
+  
         if (!response.ok) {
           const errorData = await response.json();
           console.log('Eroare la obținerea detaliilor lecției:', errorData);
           Alert.alert('Eroare', errorData.message || 'Nu am putut obține detaliile lecției');
           return;
         }
-
+  
         const data = await response.json();
         console.log('Detalii lecție primite:', data);
         setLessonDetail(data.lesson);
-
+  
+        // Verificăm statusul de prezență
         await checkAttendanceStatus();
       } catch (error) {
         console.error('Eroare la cererea de detalii lecție:', error);
@@ -223,7 +222,7 @@ const SubjectDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         setLoading(false);
       }
     };
-
+  
     fetchData();
   }, [subjectId, navigation, checkAttendanceStatus]);
 
